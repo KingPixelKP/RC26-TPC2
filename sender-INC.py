@@ -28,7 +28,10 @@ def waitForAck( s, seg ):
 
 
 def tx_thread( s, receiver, windowSize, cond, timeout ):
-    # TO DO
+    '''
+    Helper thread (tx_thread) that manages the sliding 
+    window buffer and handles timeouts and retransmissions.
+    '''
     return
             
 

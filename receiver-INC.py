@@ -19,6 +19,8 @@ def sendAck( ackNo, sock, end ):
 
 def rx_thread( s, sender, que, bSize):
     #TO DO
+
+    # recieves (block_number, data) -> sends (block_number)
     return
     
 def receiveNextBlock( q ):

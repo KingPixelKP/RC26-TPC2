@@ -1,3 +1,7 @@
+"""
+67775   Gabriel Matias
+68130   Dinis Neves
+"""
 import sys
 from socket import *
 import threading

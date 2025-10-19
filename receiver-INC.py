@@ -3,11 +3,29 @@ from socket import *
 import threading
 import select
 import time
+import math
 import queue
 import pickle
 import random
 
-close_cond = threading.Lock()
+FIN = -2
+
+TIMEOUT_MAX = 10
+
+def print_important(string : str) -> None:
+    print("---",end="")
+    for _ in range(len(string)):
+        print("-", end="")
+    print("---")
+    print("   ",end="")
+
+    print(string)
+    
+    print("---",end="")
+    for _ in range(len(string)):
+        print("-", end="")
+    print("---")
+
 
 def sendAck( ackNo, sock, end ):
     rand = random.randint(0,9)
@@ -21,39 +39,50 @@ def waitForData( s, seg ):
     return rx!=[]
 
 def rx_thread( s, sender, que : queue.Queue, bSize):
+
+    timeouts = 0
+    # Add final state just for funs
+
     nSeq = 1
     while True:
-        if close_cond.locked():
+        if timeouts == TIMEOUT_MAX:
+            #The sender has not talked for a while closing
+            print_important("Timeout Closed")
             break
-        #time.sleep(0.25)
         if waitForData(s, 1):
             rep, _ = s.recvfrom(bSize+32)
-            reply = pickle.loads(rep)
+            blockNum, message = pickle.loads(rep)
+            #if que.full(): #Received a block either good seq or not doesnt matter because the window is full
+            #    sendAck(nSeq-1, s, sender)
+            #    #Try again to listen
             
-            if que.full(): #Received a block either good seq or not doesnt matter because the window is full
-                print("Window full acking {}".format(nSeq))
-                sendAck(nSeq-1, s, sender)
+            if blockNum == FIN:
+                # Start closing transmission
+                print_important("Closing connection")
+                sendAck(FIN, s, sender) # Send an ackowledge with the FIN
+                sendAck(FIN, s, sender) # Send a "data" with the FIN
+                print_important("Connection Closed")
+                break;
 
-                #Try again to listen
-            else:  
-                
+            elif blockNum == nSeq:
                 #Received correct block
-                if reply[0] == nSeq:
-                    #Send Ack
-                    sendAck(reply[0], s, sender)
-
-                    #Put block's data into the queue and slide the window
-                    que.put(reply[1])
-                    nSeq += 1
-                    print("I acked block {}".format(reply[0]))
-                    
-                else: #Received wrong block send this info to the sender and try again
-                    print("I received block {}, wanted {}".format(reply[0], nSeq))
-                    sendAck(nSeq - 1, s, sender)
-    return
+                #Send Ack
+                sendAck(blockNum, s, sender)
+                #Put block's data into the queue and slide the window
+                que.put(message, timeout = 1)
+                nSeq += 1
+            else: #Received wrong block send this info to the sender and try again
+                sendAck(nSeq - 1, s, sender)
+                
+            timeouts = 0
+        else:
+            timeouts += 1
     
 def receiveNextBlock( q ):
-    return q.get()
+    try:
+        return q.get(timeout = 11)
+    except queue.Empty:
+        raise Exception("Queue did not receive data in the given ammount of time, closing main thread")
 
 def main(sIP, sPort, fNameRemote, fNameLocal, blockSize):
 
@@ -73,7 +102,7 @@ def main(sIP, sPort, fNameRemote, fNameLocal, blockSize):
         sys.exit(1)
     #start transfer with data and ack losses
     fileSize = reply[1]
-    q = queue.Queue(1)
+    q = queue.Queue()
     tid = threading.Thread( target=rx_thread, args=(s, sender, q, blockSize))
     tid.start()
     f = open( fNameLocal, 'wb')
@@ -86,11 +115,10 @@ def main(sIP, sPort, fNameRemote, fNameLocal, blockSize):
             f.write(b)
             noBytesRcv += sizeOfBlockReceived
 
+    print_important("Writing finished")
     f.close()
-    close_cond.acquire()
     tid.join()
-    close_cond.release()
-    print("Transfer finished")
+    print_important("Transfer Finished")
        
 
 if __name__ == "__main__":

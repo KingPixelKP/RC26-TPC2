@@ -10,7 +10,6 @@ blocksInWindow = 0
 empty_cond = threading.Condition()
 close_cond = threading.Lock()
 window = []
-close_conect = False
 
 def sendDatagram( blockNo, contents, sock, end ):
     rand = random.randint(0,9)
@@ -33,13 +32,13 @@ def tx_thread( s, receiver, cond, timeout ):
         for nSeq, data in window:
             sendDatagram(nSeq, data, s, receiver)
 
-    while not close_conect:
+    while True:
+        if close_cond.locked() and len(window) == 0: 
+            break
         if waitForAck(s, timeout):
             buf, rem = s.recvfrom( 256 )
             req = pickle.loads(buf)
             empty_cond.acquire()
-            if close_cond.locked():
-                break
             if len(window) == 0:
                 print("Waiting for window to fill")
                 empty_cond.wait()
@@ -84,6 +83,7 @@ def sendBlock( seqNo, fileBytes, s, receiver, windowSize, cond ):  #producer
 def main(hostname, senderPort, windowSize, timeOutInSec):
     s = socket( AF_INET, SOCK_DGRAM)
     s.bind((hostname, senderPort))
+    print("Server running on port {}, {}".format(sys.argv[1], gethostbyname(gethostname())))
     # interaction with receiver; no datagram loss
     buf, rem = s.recvfrom( 256 )
     req = pickle.loads( buf)
@@ -119,7 +119,6 @@ def main(hostname, senderPort, windowSize, timeOutInSec):
             break
     f.close()
     close_cond.acquire()
-    print(close_conect)
     tid.join()
     close_cond.release()
     print("Transmission ended")

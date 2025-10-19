@@ -7,6 +7,8 @@ import queue
 import pickle
 import random
 
+close_cond = threading.Lock()
+
 def sendAck( ackNo, sock, end ):
     rand = random.randint(0,9)
     if rand > 1:
@@ -20,7 +22,9 @@ def waitForData( s, seg ):
 
 def rx_thread( s, sender, que : queue.Queue, bSize):
     nSeq = 1
-    while not que.is_shutdown:
+    while True:
+        if close_cond.locked():
+            break
         #time.sleep(0.25)
         if waitForData(s, 1):
             rep, _ = s.recvfrom(bSize+32)
@@ -83,8 +87,9 @@ def main(sIP, sPort, fNameRemote, fNameLocal, blockSize):
             noBytesRcv += sizeOfBlockReceived
 
     f.close()
-    q.shutdown()
+    close_cond.acquire()
     tid.join()
+    close_cond.release()
     print("Transfer finished")
        
 

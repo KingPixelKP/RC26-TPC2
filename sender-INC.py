@@ -15,7 +15,8 @@ FIN = -2
 
 STATE_1 = 1
 STATE_2 = 2
-STATE_FIN = FIN
+STATE_FIN1 = -1
+STATE_FIN2 = -2
 
 TIMEOUT_MAX = 10
 TIMEOUT_MAX_EMPTY_WINDOW = 1
@@ -88,8 +89,12 @@ def tx_thread( s, receiver, cond, windowSize, timeout ):
             r_ack, = pickle.loads(buf)
 
             if len(window) != 0:
-                if current_state == STATE_FIN and r_ack == FIN: #Closing state
+                if current_state == STATE_FIN1 and r_ack == FIN: #Closing state
+                    current_state = STATE_FIN2
+                    print_important("Received Fin Ack")
+                elif current_state == STATE_FIN2 and r_ack == FIN:
                     #Received close connection from client (All went well closing)
+                    sendBlock(FIN, "", s, receiver, windowSize, cond)
                     print_important("Connection Closed")
                     break
                 elif current_state == STATE_2: #State 2
@@ -119,7 +124,7 @@ def tx_thread( s, receiver, cond, windowSize, timeout ):
             elif len(window) == 0 and timeouts >= TIMEOUT_MAX_EMPTY_WINDOW:
                 # Start closing transmission
                 print_important("Closing connection")
-                current_state = STATE_FIN
+                current_state = STATE_FIN1
                 sendBlock(FIN, "", s, receiver, windowSize, cond)
             
 
@@ -127,7 +132,7 @@ def sendBlock( seqNo, fileBytes, s, receiver, windowSize, cond ):  #producer
     with cond:
         if (len(window) >= windowSize):
             cond.wait(11)
-            if len(window) >= windowSize:
+            if len(window) >= windowSize: # If waited for the 11 secs then assume thread "died" 
                 raise Exception("Window did not empty in the time given amount of time, closing main thread")
 
         window.append((seqNo, fileBytes))

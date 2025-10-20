@@ -10,6 +10,10 @@ import random
 
 FIN = -2
 
+STATE_1 = 1
+STATE_FIN1 = -1
+STATE_FIN2 = -2
+
 TIMEOUT_MAX = 10
 
 def print_important(string : str) -> None:
@@ -41,7 +45,7 @@ def waitForData( s, seg ):
 def rx_thread( s, sender, que : queue.Queue, bSize):
 
     timeouts = 0
-    # Add final state just for funs
+    current_state = STATE_1
 
     nSeq = 1
     while True:
@@ -52,19 +56,20 @@ def rx_thread( s, sender, que : queue.Queue, bSize):
         if waitForData(s, 1):
             rep, _ = s.recvfrom(bSize+32)
             blockNum, message = pickle.loads(rep)
-            #if que.full(): #Received a block either good seq or not doesnt matter because the window is full
-            #    sendAck(nSeq-1, s, sender)
-            #    #Try again to listen
             
-            if blockNum == FIN:
-                # Start closing transmission
-                print_important("Closing connection")
-                sendAck(FIN, s, sender) # Send an ackowledge with the FIN
-                sendAck(FIN, s, sender) # Send a "data" with the FIN
+            if current_state == STATE_FIN1 and blockNum == FIN:
+                #Received Ack from server close
                 print_important("Connection Closed")
                 break;
-
-            elif blockNum == nSeq:
+            elif blockNum == FIN:
+                # Start closing transmission
+                current_state = STATE_FIN1
+                print_important("Closing connection")
+                sendAck(FIN, s, sender) # Send an ackowledge with the FIN
+                for _ in range(10): # Send some FIN to make "sure" the sender receives one, even if the server doesnt itll timeout eventually
+                    sendAck(FIN, s, sender) # Send a "data" with the FIN
+                    
+            elif current_state == STATE_1 and blockNum == nSeq:
                 #Received correct block
                 #Send Ack
                 sendAck(blockNum, s, sender)
@@ -81,7 +86,7 @@ def rx_thread( s, sender, que : queue.Queue, bSize):
 def receiveNextBlock( q ):
     try:
         return q.get(timeout = 11)
-    except queue.Empty:
+    except queue.Empty: # If queue did not fill within 11 secs assume thread "died"
         raise Exception("Queue did not receive data in the given ammount of time, closing main thread")
 
 def main(sIP, sPort, fNameRemote, fNameLocal, blockSize):
